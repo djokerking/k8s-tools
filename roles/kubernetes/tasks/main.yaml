@@ -75,6 +75,13 @@
   file:
     path: /root/.kube
     state: absent
+# 创建需要的目录
+- name: create kubernetes manifests
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+  - /etc/kubernetes/manifests
 
 - name: kubectl config init 
   block:
