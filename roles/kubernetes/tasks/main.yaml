@@ -1,0 +1,161 @@
+# 拷贝主节点需要的文件
+- name: copy ca file and k8s library file to master
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0777'
+  with_items:
+  - { src: "kubernetes.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "kubernetes-key.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "kube-apiserver", dest: "/opt/kubernetes/bin" }
+  - { src: "kube-controller-manager", dest: "/opt/kubernetes/bin" }
+  - { src: "kube-scheduler", dest: "/opt/kubernetes/bin" }
+  when: "( hostname in master.split(',') )"
+
+# 拷贝节点所需的文件
+- name: copy ca file and k8s library file to all node
+  copy:
+    src:  "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0777'
+  with_items:
+  - { src: "cni", dest: "/opt/kubernetes/bin" }
+  - { src: "admin.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "admin-key.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "kube-proxy", dest: "/opt/kubernetes/bin" }
+  - { src: "kubelet", dest: "/opt/kubernetes/bin" }
+  - { src: "kubectl", dest: "/opt/kubernetes/bin" }
+
+# 拷贝主节点所需的service文件
+- name: copy services file of master
+  template:
+    src:  "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "kube-apiserver.service", dest: "/usr/lib/systemd/system/" }
+  - { src: "kube-controller-manager.service", dest: "/usr/lib/systemd/system/" }
+  - { src: "kube-scheduler.service", dest: "/usr/lib/systemd/system/" }
+  when: "( hostname in master.split(',') )"
+
+# 拷贝节点所需的service文件
+- name: copy services file of all node
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "kube-proxy.service", dest: "/usr/lib/systemd/system/" }
+  - { src: "kubelet.service", dest: "/usr/lib/systemd/system/" }
+  - { src: "kubelet.config.yaml", dest: "/opt/kubernetes/cfg" }
+
+# 配置nginx高可用
+- name: copy nginx nginx.service
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0777'
+  when: ( ',' in master ) and ( hostname in master.split(',') )
+  with_items:
+  - { src: "nginx", dest: "/opt/kubernetes" }
+  - { src: "nginx.service", dest: "/usr/lib/systemd/system/nginx.service" }
+
+- name: copy nginx.conf
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "nginx.conf", dest: "/opt/kubernetes/nginx/conf/nginx.conf" }
+  when: ( ',' in master ) and ( hostname in master.split(',') )
+
+# 重载服务
+- name: reload systemd
+  shell: systemctl daemon-reload
+
+# 初始化kubectl
+- name: clean kubeconfig
+  file:
+    path: /root/.kube
+    state: absent
+
+- name: kubectl config init 
+  block:
+  - shell: /opt/kubernetes/bin/kubectl config set-cluster kubernetes --certificate-authority=/opt/kubernetes/ssl/ca.pem --embed-certs=true --server=https://"{{ play_hosts[0] }}":6443
+    when: "( ',' not in master )"
+  - shell: /opt/kubernetes/bin/kubectl config set-cluster kubernetes --certificate-authority=/opt/kubernetes/ssl/ca.pem --embed-certs=true --server=https://"{{ k8svip }}":6444
+    when: "( ',' in master )"
+  - shell: /opt/kubernetes/bin/kubectl config set-credentials admin --client-certificate=/opt/kubernetes/ssl/admin.pem --embed-certs=true --client-key=/opt/kubernetes/ssl/admin-key.pem
+  - shell: /opt/kubernetes/bin/kubectl config set-context kubernetes --cluster=kubernetes --user=admin 
+  - shell: /opt/kubernetes/bin/kubectl config use-context kubernetes
+
+- name: copy kube config
+  shell: cp /root/.kube/config /opt/kubernetes/cfg/kube.kubeconfig
+
+# 启动服务
+- name: enable && start apiserver controller-manager scheduler
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: restarted
+  with_items:
+  - kube-apiserver
+  - kube-controller-manager
+  - kube-scheduler
+  when: "( hostname in master.split(',') )"
+
+- name: enable && start kube-proxy kubelet
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: restarted
+  with_items:
+  - kube-proxy
+  - kubelet
+
+- name: enable && start nginx
+  systemd:
+    name: nginx
+    enabled: yes
+    state: restarted
+  when: ( ',' in master ) and ( hostname in master.split(',') )
+
+- name: install keepalived
+  yum:
+    name: keepalived
+  when: "( hostname in master.split(',') )"
+
+- name: copy keepalived config
+  template:
+    src: keepalived.conf
+    dest: /etc/keepalived/keepalived.conf
+  when: "( hostname in master.split(',') )"
+
+- name:  enable && start keepalived
+  systemd:
+    name: keepalived
+    enabled: yes
+    state: restarted
+  when: "( hostname in master.split(',') )"
+
+# 配置flannel网络插件
+- name: copy flannel.yaml
+  template:
+    src: flannel.yaml
+    dest: /opt/kubernetes/cfg
+  when: "( hostname in master.split(',') )"
+
+- name: clean flannel old config file
+  file: 
+    path: /var/lib/cni
+    state: absent
+
+- name: delete cni0
+  shell: ip link set cni0 down && ip link delete cni0
+  ignore_errors: yes
+
+- name: delete flannel
+  shell: /opt/kubernetes/bin/kubectl delete -f /opt/kubernetes/cfg/flannel.yaml
+  ignore_errors: yes
+  when: "( hostname in master.split(',')[0] )"
+
+- name: apply flannel.yaml
+  shell: /opt/kubernetes/bin/kubectl apply -f /opt/kubernetes/cfg/flannel.yaml
+  when: "( hostname in master.split(',')[0] )"

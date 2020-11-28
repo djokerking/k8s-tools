@@ -1,0 +1,23 @@
+- name: copy registry img
+  copy:
+    src: registry.tar
+    dest: /tmp/registry.tar
+
+- name: load registry img
+  shell: docker load -i /tmp/registry.tar
+
+- name: create tmp dir
+  shell: mkdir /tmp/registry
+- name: copy registry yaml
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "registry.yaml", dest:"/tmp/registry" }
+  - { src: "registry-svc.yaml", dest:"/tmp/registry" }
+  when: "( hostname in master.split(',')[0] )"
+
+- name: apply registry yaml
+  shell: kubectl apply -f ./
+  workdir: /tmp/registry
+  when: "( hostname in master.split(',')[0] )"

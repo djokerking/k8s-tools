@@ -1,0 +1,19 @@
+- name: copy docker-ce.repo
+  copy: 
+    src: docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+
+- name: yum install docker
+  yum: 
+    name: docker-ce
+
+- name: enable && start docker
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+
+- name: config /etc/profile
+  lineinfile: 
+    path: /etc/profile
+    line: export PATH=$PATH:$HOME/bin:/opt/kubernetes/bin

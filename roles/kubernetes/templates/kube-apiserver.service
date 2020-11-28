@@ -1,0 +1,39 @@
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=network.target
+ 
+[Service]
+ExecStart=/opt/kubernetes/bin/kube-apiserver \
+  --enable-admission-plugins=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota,NodeRestriction \
+  --bind-address={{ inventory_hostname }} \
+  --authorization-mode=Node,RBAC \
+  --runtime-config=rbac.authorization.k8s.io/v1 \
+  --anonymous-auth=false \
+  --enable-bootstrap-token-auth \
+  --service-cluster-ip-range=10.1.0.0/16 \
+  --service-node-port-range=1-65535 \
+  --tls-cert-file=/opt/kubernetes/ssl/kubernetes.pem \
+  --tls-private-key-file=/opt/kubernetes/ssl/kubernetes-key.pem \
+  --client-ca-file=/opt/kubernetes/ssl/ca.pem \
+  --service-account-key-file=/opt/kubernetes/ssl/ca-key.pem \
+  --etcd-cafile=/opt/kubernetes/ssl/ca.pem \
+  --etcd-certfile=/opt/kubernetes/ssl/kubernetes.pem \
+  --etcd-keyfile=/opt/kubernetes/ssl/kubernetes-key.pem \
+  --etcd-servers=https://{{ etcd.split(',')[0] }}:2379,https://{{ etcd.split(',')[1] }}:2379,https://{{ etcd.split(',')[2] }}:2379 \
+  --allow-privileged=true \
+  --audit-log-maxage=30 \
+  --audit-log-maxbackup=3 \
+  --audit-log-maxsize=100 \
+  --audit-log-path=/opt/kubernetes/log/api-audit.log \
+  --event-ttl=1h \
+  --v=2 \
+  --logtostderr=false \
+  --log-dir=/opt/kubernetes/log
+Restart=on-failure
+RestartSec=5
+Type=notify
+LimitNOFILE=65536
+ 
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,68 @@
+# 设置主机名
+- name: set hostname 
+  command: hostnamectl set-hostname "{{ hostname }}"
+
+# 设置hosts文件
+- name: copy hosts.sh
+  template: 
+    src: hosts.sh
+    dest: /tmp/hosts.sh
+
+- name: run hosts.sh 
+  shell: sh /tmp/hosts.sh
+
+# 关闭防火墙
+- name: disable && stop firewalld
+  systemd: 
+    name: firewalld
+    state: stopped
+    enabled: no
+
+# 关闭selinux
+- name: setenforce 0
+  command: setenforce 0
+  ignore_errors: yes
+
+- name: set sysconfig/selinux disabled
+  lineinfile:
+    path: /etc/sysconfig/selinux
+    regexp: '^SELINUX='
+    line: SELINUX=disabled
+
+# ssh免密登录
+- name: mkdir /root/.ssh
+  file: 
+    path: /root/.ssh
+    state: directory
+  ignore_errors: yes
+
+- name: copy authorized_keys
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0600"
+  with_items:
+  - { src: "id_rsa.pub", dest: "/root/.ssh/authorized_keys" }
+  - { src: "id_rsa.pub", dest: "/root/.ssh/id_rsa.pub" }
+  - { src: "id_rsa", dest: "/root/.ssh/id_rsa" }
+
+# 安装常用工具
+#- name: yum install vim net-tools wget 
+#  yum:
+#    name: "{{ packages }}"
+#  vars:
+#    packages:
+#    - vim
+#    - net-tools
+#    - wget
+
+# 创建环境部署目录，为环境的部署目录
+- name: create kubernetes workdir {cfg,bin,ssl,log}
+  file: 
+    path: "{{ item }}"
+    state: directory
+  with_items:
+  - /opt/kubernetes/cfg
+  - /opt/kubernetes/bin
+  - /opt/kubernetes/ssl
+  - /opt/kubernetes/log

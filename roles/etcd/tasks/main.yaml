@@ -1,0 +1,78 @@
+- name: debug info
+  debug: msg="{{ etcd.split(',') }}"
+#  debug: msg="{{ hostvars[play_hosts[0]]['hostname'] , hostvars[0] }}"
+  when: "( hostname in etcd )"
+
+# 停止etcd
+- name: stop etcd.services
+  systemd:
+    name: etcd
+    state: stopped
+  ignore_errors: yes
+
+# 清除旧的etcd数据目录
+- name: clean etcd data directory
+  file: 
+    path: "{{ item.file }}"
+    state: absent
+  with_items:
+  - { file: "/var/lib/etcd" }
+  - { file: "/opt/kubernetes/ssl/ca.pem" }
+  - { file: "/opt/kubernetes/ssl/ca-key.pem" }
+  - { file: "/opt/kubernetes/ssl/etcd.pem" }
+  - { file: "/opt/kubernetes/ssl/etcd-key.pem" }
+  ignore_errors: yes
+
+# 复制ca证书到所有节点
+- name: copy ca key files 
+  copy: 
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "ca.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "ca-key.pem", dest: "/opt/kubernetes/ssl" }
+
+# 复制etcd证书和二进制文件到etcd集群节点
+- name: copy etcd ca key files  and library
+  copy:  
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0777'
+  when: "( hostname in etcd )"
+  with_items:
+  - { src: "etcd.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "etcd-key.pem", dest: "/opt/kubernetes/ssl" }
+  - { src: "etcd", dest: "/opt/kubernetes/bin" }
+  - { src: "etcdctl", dest: "/opt/kubernetes/bin" }
+  - { src: "etcd.service", dest: "/etc/systemd/system" }
+
+# 复制etcd配置文件
+- name: copy etcd config
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0777'
+  when: "( hostname in etcd )"
+  with_items:
+  - { src: "etcd.conf", dest: "/opt/kubernetes/cfg" }
+  - { src: "etcdtools", dest: "/opt/kubernetes/bin" }
+
+# 创建etcd数据目录
+- name: mkdir etcd data directory
+  file:
+    path: /var/lib/etcd
+    state: directory
+  when: "( hostname in etcd )"
+
+# 重载服务
+- name: reload systemctl
+  shell: systemctl daemon-reload
+  when: "( hostname in etcd )"
+
+# 启动etcd服务
+- name: enable && start etcd
+  systemd:
+    name: etcd
+    enabled: yes
+    state: started
+  when: "( hostname in etcd )"

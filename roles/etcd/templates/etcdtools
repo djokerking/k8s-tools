@@ -1,0 +1,19 @@
+#!/bin/bash
+if [ ${1}x == 'v2'x ];then
+  export  ETCDCTL_API=2
+  shift
+  etcdctl --ca-file=/opt/kubernetes/ssl/ca.pem \
+  --cert-file=/opt/kubernetes/ssl/etcd.pem \
+  --key-file=/opt/kubernetes/ssl/etcd-key.pem  \
+  --endpoints=https://{{ etcd.split(',')[0] }}:2379,https://{{ etcd.split(',')[1] }}:2379,https://{{ etcd.split(',')[2] }}:2379 $@
+elif  [ ${1}x == 'v3'x ];then
+  export  ETCDCTL_API=3
+  shift
+  etcdctl --cacert=/opt/kubernetes/ssl/ca.pem \
+  --cert=/opt/kubernetes/ssl/etcd.pem \
+  --key=/opt/kubernetes/ssl/etcd-key.pem  \
+  --endpoints=https://{{ etcd.split(',')[0] }}:2379,https://{{ etcd.split(',')[1] }}:2379,https://{{ etcd.split(',')[2] }}:2379 $@
+else
+  echo "etcdtools v2|v3 command"
+fi
+
